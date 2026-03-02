@@ -222,7 +222,6 @@ function diffLayer(curr, prev, higherIsBetter = false) {
 
   return { direction, severity, delta: parseFloat(delta.toFixed(2)), pct };
 }
-}
 
 /**
  * Calcula o IQA a partir do PM2.5 (escala CONAMA simplificada).

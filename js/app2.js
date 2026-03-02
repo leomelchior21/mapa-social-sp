@@ -33,23 +33,51 @@ function startClock() {
 }
 
 function initMap() {
-  APP.map = new maplibregl.Map({
-    container: 'map',
-    style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [-46.6333, -23.5505],
-    zoom: 10.8, pitch: 0,
-    attributionControl: false,
-  });
-  APP.map.addControl(new maplibregl.AttributionControl({ compact:true }), 'bottom-right');
-  APP.map.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'bottom-right');
+  // Estilos em ordem de preferência (fallback automático)
+  const STYLES = [
+    'https://tiles.openfreemap.org/styles/positron',
+    'https://demotiles.maplibre.org/style.json',
+  ];
 
-  APP.map.on('load', () => {
-    initVisualEngine(APP.map);
-    runTick();
-    startSimLoop();
-    const arChk = document.querySelector('.layer-chk[data-layer="ar"]');
-    if (arChk) { arChk.checked = true; toggleLayer('ar', true); }
-  });
+  function tryStyle(index) {
+    if (index >= STYLES.length) {
+      console.error('[MAP] Todos os estilos falharam');
+      document.getElementById('map').innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-family:DM Mono,monospace;font-size:12px;background:#0f1117">Mapa indisponível — verifique sua conexão</div>';
+      return;
+    }
+
+    APP.map = new maplibregl.Map({
+      container: 'map',
+      style: STYLES[index],
+      center: [-46.6333, -23.5505],
+      zoom: 10.8, pitch: 0,
+      attributionControl: false,
+    });
+
+    APP.map.on('error', (e) => {
+      console.warn(`[MAP] Estilo ${index} falhou:`, e);
+      APP.map.remove();
+      tryStyle(index + 1);
+    });
+
+    APP.map.addControl(new maplibregl.AttributionControl({ compact:true }), 'bottom-right');
+    APP.map.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'bottom-right');
+
+    APP.map.on('load', () => {
+      console.log('[MAP] Carregado com estilo:', STYLES[index]);
+      // Esconde indicador de loading
+      const loadEl = document.getElementById('map-loading');
+      if (loadEl) loadEl.classList.add('hidden');
+      initVisualEngine(APP.map);
+      runTick();
+      startSimLoop();
+      const arChk = document.querySelector('.layer-chk[data-layer="ar"]');
+      if (arChk) { arChk.checked = true; toggleLayer('ar', true); }
+    });
+  }
+
+  tryStyle(0);
 }
 
 function startSimLoop() {
