@@ -61,10 +61,52 @@ const BASE = {
 // ── Estado atual da simulação ──────────────────────────
 export let STATE = JSON.parse(JSON.stringify(BASE));
 
+// ── Estado anterior — para detectar melhora/piora ─────
+export let PREV_STATE = JSON.parse(JSON.stringify(BASE));
+
+// ── Diff: o que mudou neste tick ──────────────────────
+// Estrutura: { layer: { direction: 'up'|'down'|'stable', severity: 'ok'|'warn'|'crit' } }
+export let TICK_DIFF = {};
+
 // ── Variáveis de contexto (afetam múltiplas camadas) ───
 let _chuva_ativa = false;
 let _hora = new Date().getHours();
 let _tick = 0;
+
+// ── Zonas geográficas com intensidade por camada ───────
+// Cada zona tem um polígono (bbox simplificado) e multipliers
+export const ZONES = {
+  ar: [
+    { id:'z-ar-centro',   name:'Centro Expandido',   lat:-23.548, lng:-46.638, radius:0.025, factor: 1.5 },
+    { id:'z-ar-aBC',      name:'Grande ABC',          lat:-23.640, lng:-46.535, radius:0.030, factor: 1.8 },
+    { id:'z-ar-guarulhos',name:'Guarulhos',           lat:-23.455, lng:-46.530, radius:0.028, factor: 1.3 },
+    { id:'z-ar-pinheiros',name:'Pinheiros/Marginal',  lat:-23.565, lng:-46.700, radius:0.020, factor: 1.2 },
+  ],
+  agua: [
+    { id:'z-ag-tiete',    name:'Vale do Tietê',       lat:-23.503, lng:-46.605, radius:0.040, factor: 2.1 },
+    { id:'z-ag-glicerio', name:'Glicério/Liberdade',  lat:-23.560, lng:-46.627, radius:0.015, factor: 2.8 },
+    { id:'z-ag-mooca',    name:'Mooca/Ipiranga',      lat:-23.568, lng:-46.592, radius:0.018, factor: 1.9 },
+    { id:'z-ag-guarapiranga', name:'Guarapiranga',    lat:-23.710, lng:-46.720, radius:0.035, factor: 0.6 },
+  ],
+  trafego: [
+    { id:'z-tr-paulista', name:'Av. Paulista',        lat:-23.561, lng:-46.656, radius:0.012, factor: 1.8, vias: [[-46.670,-23.561],[-46.640,-23.561]] },
+    { id:'z-tr-margpinhe',name:'Marginal Pinheiros',  lat:-23.565, lng:-46.720, radius:0.010, factor: 2.0, vias: [[-46.750,-23.558],[-46.680,-23.574]] },
+    { id:'z-tr-radial',   name:'Radial Leste',        lat:-23.540, lng:-46.540, radius:0.015, factor: 1.6, vias: [[-46.630,-23.543],[-46.500,-23.537]] },
+    { id:'z-tr-margtiete',name:'Marginal Tietê',      lat:-23.512, lng:-46.640, radius:0.010, factor: 1.9, vias: [[-46.730,-23.508],[-46.560,-23.516]] },
+  ],
+  residuos: [
+    { id:'z-re-itaquera',  name:'Itaquera',           lat:-23.535, lng:-46.455, radius:0.020, factor: 1.4 },
+    { id:'z-re-campolimpo',name:'Campo Limpo',        lat:-23.665, lng:-46.752, radius:0.022, factor: 1.6 },
+    { id:'z-re-brasilandia',name:'Brasilândia',       lat:-23.430, lng:-46.695, radius:0.018, factor: 1.3 },
+    { id:'z-re-caieiras',  name:'Aterro Caieiras',    lat:-23.365, lng:-46.740, radius:0.015, factor: 0.8 },
+  ],
+  saude: [
+    { id:'z-sa-clinicas',  name:'H. das Clínicas',   lat:-23.551, lng:-46.671, radius:0.018, factor: 1.0 },
+    { id:'z-sa-unifesp',   name:'H. São Paulo',       lat:-23.598, lng:-46.639, radius:0.016, factor: 1.1 },
+    { id:'z-sa-campo',     name:'UPA Campo Limpo',    lat:-23.668, lng:-46.748, radius:0.015, factor: 1.3 },
+    { id:'z-sa-ermelino',  name:'UPA Ermelino',       lat:-23.499, lng:-46.454, radius:0.015, factor: 1.2 },
+  ],
+};
 
 /**
  * Avança a simulação um passo (chamado a cada ~60s).
@@ -73,6 +115,9 @@ let _tick = 0;
 export function tick() {
   _tick++;
   _hora = new Date().getHours();
+
+  // Salva estado anterior para comparação
+  PREV_STATE = JSON.parse(JSON.stringify(STATE));
 
   // ── 1. Clima (driver principal) ───────────────────────
   const isManha = _hora >= 7 && _hora <= 9;
@@ -145,7 +190,38 @@ export function tick() {
   STATE.solo.agrotox = parseFloat((BASE.solo.agrotox + jitter(0.8)).toFixed(1));
   STATE.solo.desmat  = Math.round(BASE.solo.desmat + jitter(20));
 
+  // ── Calcula DIFF para feedback visual ─────────────────
+  TICK_DIFF = {
+    ar: diffLayer(STATE.ar.iqa, PREV_STATE.ar.iqa, false), // false = menor é melhor
+    agua: diffLayer(STATE.agua.turbidez, PREV_STATE.agua.turbidez, false),
+    energia: diffLayer(STATE.energia.termica, PREV_STATE.energia.termica, false),
+    residuos: diffLayer(STATE.residuos.pts_irreg, PREV_STATE.residuos.pts_irreg, false),
+    solo: diffLayer(STATE.solo.agrotox, PREV_STATE.solo.agrotox, false),
+    trafego: diffLayer(STATE.trafego.congestionamento, PREV_STATE.trafego.congestionamento, false),
+    saude: diffLayer(STATE.saude.respirat, PREV_STATE.saude.respirat, false),
+  };
+
   return STATE;
+}
+
+/** Calcula direção e severidade de uma mudança */
+function diffLayer(curr, prev, higherIsBetter = false) {
+  const delta = curr - prev;
+  const pct   = prev !== 0 ? Math.abs(delta / prev) : 0;
+  let direction = 'stable';
+  if (delta > 0) direction = higherIsBetter ? 'up' : 'down';  // down = piorou
+  if (delta < 0) direction = higherIsBetter ? 'down' : 'up';  // up = melhorou
+
+  // severity: ok se mudança < 5%, warn 5-15%, crit > 15%
+  let severity = 'ok';
+  if (pct > 0.15) severity = 'crit';
+  else if (pct > 0.05) severity = 'warn';
+
+  // Se piorou muito → crit independente
+  if (direction === 'down' && pct > 0.08) severity = 'crit';
+
+  return { direction, severity, delta: parseFloat(delta.toFixed(2)), pct };
+}
 }
 
 /**
