@@ -1,0 +1,173 @@
+name: 🗄️ Atualização Diária de Dados SP
+
+# ─────────────────────────────────────────────────────────
+# Executa todos os dias à 05:00 UTC (02:00 horário de Brasília)
+# Também pode ser disparado manualmente via GitHub Actions UI
+# ─────────────────────────────────────────────────────────
+on:
+  schedule:
+    - cron: '0 5 * * *'   # Diariamente 05:00 UTC
+  workflow_dispatch:        # Execução manual
+    inputs:
+      layer:
+        description: 'Camada específica (ar | focos | saude | all)'
+        required: false
+        default: 'all'
+
+jobs:
+  # ──────────────────────────────────────────────────────
+  # JOB 1: Atualizar qualidade do ar (CETESB via dados.gov.br)
+  # ──────────────────────────────────────────────────────
+  update-ar:
+    name: 🌫️ Qualidade do Ar — CETESB
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.layer == 'all' || github.event.inputs.layer == 'ar' || github.event_name == 'schedule' }}
+
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: |
+          pip install requests pandas pyarrow geopandas
+
+      - name: Baixar e processar dados CETESB
+        run: |
+          python scripts/fetch_ar.py
+        env:
+          # Opcional: chave CETESB se disponível
+          CETESB_API_KEY: ${{ secrets.CETESB_API_KEY }}
+
+      - name: Commit dados atualizados
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ar_sp.parquet data/ar_sp_meta.json
+          git diff --staged --quiet || git commit -m "🔄 Auto: qualidade do ar $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
+
+  # ──────────────────────────────────────────────────────
+  # JOB 2: Focos de calor (INPE — BDQueimadas)
+  # ──────────────────────────────────────────────────────
+  update-focos:
+    name: 🔥 Focos de Calor — INPE
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.layer == 'all' || github.event.inputs.layer == 'focos' || github.event_name == 'schedule' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests pandas pyarrow
+
+      - name: Baixar focos INPE (últimas 48h)
+        run: python scripts/fetch_focos.py
+
+      - name: Commit dados
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/focos_sp.parquet data/focos_sp_meta.json
+          git diff --staged --quiet || git commit -m "🔄 Auto: focos de calor $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
+
+  # ──────────────────────────────────────────────────────
+  # JOB 3: Equipamentos de saúde (SMS-SP / DATASUS)
+  # Atualiza semanalmente (dados mudam menos)
+  # ──────────────────────────────────────────────────────
+  update-saude:
+    name: 🏥 Equipamentos de Saúde — SMS-SP
+    runs-on: ubuntu-latest
+    # Atualiza apenas às segundas-feiras (dados mais estáticos)
+    if: |
+      (github.event_name == 'schedule' && format('{0}', github.event.schedule) == '0 5 * * 1') ||
+      github.event.inputs.layer == 'saude' ||
+      github.event.inputs.layer == 'all'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests pandas pyarrow
+
+      - name: Baixar equipamentos SMS-SP
+        run: python scripts/fetch_saude.py
+
+      - name: Commit dados
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/saude_sp.parquet data/saude_sp_meta.json
+          git diff --staged --quiet || git commit -m "🔄 Auto: saúde $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
+
+  # ──────────────────────────────────────────────────────
+  # JOB 4: Validação final — verifica integridade dos Parquets
+  # ──────────────────────────────────────────────────────
+  validate:
+    name: ✅ Validar Parquets
+    runs-on: ubuntu-latest
+    needs: [update-ar, update-focos]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # pega commit mais recente após push dos jobs anteriores
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install pandas pyarrow
+
+      - name: Validar estrutura dos Parquets
+        run: |
+          python - <<'EOF'
+          import pandas as pd
+          import os, sys
+
+          required_cols = {'latitude', 'longitude', 'tipo', 'intensidade', 'data', 'fonte'}
+          files = {
+            'ar':    'data/ar_sp.parquet',
+            'focos': 'data/focos_sp.parquet',
+            'saude': 'data/saude_sp.parquet',
+          }
+
+          errors = []
+          for key, path in files.items():
+            if not os.path.exists(path):
+              errors.append(f"❌ {path} não encontrado")
+              continue
+            df = pd.read_parquet(path)
+            missing = required_cols - set(df.columns)
+            if missing:
+              errors.append(f"❌ {path} faltam colunas: {missing}")
+            else:
+              print(f"✅ {path}: {len(df)} registros OK")
+
+          if errors:
+            for e in errors: print(e)
+            sys.exit(1)
+          EOF
+
+      - name: Notificar sucesso
+        if: success()
+        run: echo "✅ Todos os Parquets validados com sucesso em $(date -u '+%Y-%m-%d %H:%M UTC')"

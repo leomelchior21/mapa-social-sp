@@ -1,0 +1,359 @@
+/* ============================================================
+   MAPA SOCIAL — SÃO PAULO
+   style.css — Estética HUD Tática CRT
+   Paleta: Preto absoluto + Âmbar neon + Roxo ativo
+   ============================================================ */
+
+/* ── VARIÁVEIS GLOBAIS ───────────────────────────────────── */
+:root {
+  --bg:           #000000;
+  --amber:        #ffb300;
+  --amber-dim:    #7a5500;
+  --amber-glow:   rgba(255,179,0,0.15);
+  --purple:       #9b59b6;
+  --purple-bright:#c084fc;
+  --purple-glow:  rgba(155,89,182,0.2);
+  --green:        #00ff88;
+  --red:          #ff3333;
+  --text:         #e8d5a3;
+  --text-dim:     #5a4f3a;
+  --border:       rgba(255,179,0,0.25);
+  --border-hot:   rgba(255,179,0,0.7);
+  --panel-bg:     rgba(0,0,0,0.88);
+  --panel-border: 1px solid var(--border);
+  --font-mono:    'Courier New', 'Lucida Console', monospace;
+  --hud-h:        48px;
+  --panel-w:      240px;
+  --impact-w:     320px;
+}
+
+/* ── RESET ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+body { font-family: var(--font-mono); color: var(--text); font-size: 11px; }
+
+/* ── CRT OVERLAY (canvas) ────────────────────────────────── */
+#crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+/* ── HUD SUPERIOR ────────────────────────────────────────── */
+#hud-top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--hud-h);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.85) 100%);
+  border-bottom: 1px solid var(--border-hot);
+  box-shadow: 0 2px 24px rgba(255,179,0,0.1);
+}
+
+#hud-top-left { display: flex; align-items: center; gap: 10px; min-width: 200px; }
+#hud-top-right { display: flex; align-items: center; gap: 12px; min-width: 200px; justify-content: flex-end; font-size: 10px; }
+#hud-title { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: var(--text); }
+
+/* REC indicator */
+.rec-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: rec-blink 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--red); }
+  50% { opacity: 0.2; box-shadow: none; }
+}
+#rec-label { color: var(--red); letter-spacing: 2px; font-size: 10px; }
+#sys-clock { color: var(--amber); letter-spacing: 2px; font-size: 12px; font-weight: bold; }
+
+/* Sync indicator */
+.sync-idle   { color: var(--text-dim); }
+.sync-active { color: var(--green); animation: sync-pulse 0.6s ease infinite; }
+.sync-done   { color: var(--amber); }
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── MAPA ────────────────────────────────────────────────── */
+#map {
+  position: fixed;
+  top: var(--hud-h);
+  left: var(--panel-w);
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* ── PAINÉIS LATERAIS ────────────────────────────────────── */
+#panel-left {
+  position: fixed;
+  top: var(--hud-h);
+  left: 0;
+  width: var(--panel-w);
+  bottom: 0;
+  z-index: 800;
+  background: var(--panel-bg);
+  border-right: var(--panel-border);
+  padding: 14px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* scrollbar */
+#panel-left::-webkit-scrollbar { width: 4px; }
+#panel-left::-webkit-scrollbar-track { background: transparent; }
+#panel-left::-webkit-scrollbar-thumb { background: var(--amber-dim); border-radius: 2px; }
+
+/* ── PAINEL DE IMPACTO ───────────────────────────────────── */
+#panel-impact {
+  position: fixed;
+  top: calc(var(--hud-h) + 16px);
+  right: 16px;
+  width: var(--impact-w);
+  max-height: calc(100vh - var(--hud-h) - 32px);
+  z-index: 800;
+  background: var(--panel-bg);
+  border: 1px solid var(--purple);
+  box-shadow: 0 0 30px var(--purple-glow), inset 0 0 20px rgba(155,89,182,0.05);
+  padding: 14px;
+  overflow-y: auto;
+  transition: opacity 0.3s, transform 0.3s;
+}
+#panel-impact.panel-hidden { opacity: 0; pointer-events: none; transform: translateX(20px); }
+
+/* ── PANEL HEADER ────────────────────────────────────────── */
+.panel-header {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--amber);
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+/* ── LAYER TOGGLES ───────────────────────────────────────── */
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  user-select: none;
+}
+.layer-toggle:hover { border-color: var(--border); background: var(--amber-glow); }
+.layer-toggle.active { border-color: var(--amber); background: rgba(255,179,0,0.08); }
+
+.toggle-led {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.layer-toggle.active .toggle-led {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+}
+
+.toggle-icon { color: var(--amber-dim); font-size: 14px; }
+.layer-toggle.active .toggle-icon { color: var(--amber); }
+.toggle-label { flex: 1; font-size: 10px; letter-spacing: 1px; color: var(--text); }
+.toggle-source { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; }
+
+/* ── SLIDERS ─────────────────────────────────────────────── */
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.slider-group label { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; min-width: 72px; }
+.slider-group span { font-size: 9px; color: var(--amber); min-width: 24px; text-align: right; }
+
+input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+}
+
+/* ── BOTÕES ──────────────────────────────────────────────── */
+.btn-primary {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 0.2s, box-shadow 0.2s;
+  margin-top: 4px;
+}
+.btn-primary:hover {
+  background: var(--amber-glow);
+  box-shadow: 0 0 12px var(--amber-dim);
+}
+.btn-primary:active { background: rgba(255,179,0,0.25); }
+
+.btn-secondary {
+  width: 100%;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid var(--text-dim);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: border-color 0.2s, color 0.2s;
+  margin-top: 4px;
+}
+.btn-secondary:hover { border-color: var(--purple); color: var(--purple-bright); }
+
+/* ── STATS ───────────────────────────────────────────────── */
+.stat-line { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10px; border-bottom: 1px solid rgba(255,179,0,0.05); }
+
+/* ── IMPACT PANEL INFO ───────────────────────────────────── */
+#impact-origin, #impact-emitter, #impact-distance, #impact-intensity {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  line-height: 1.6;
+}
+#impact-origin strong, #impact-emitter strong { color: var(--amber); display: block; font-size: 9px; letter-spacing: 1px; margin-bottom: 2px; }
+
+#impact-claude-text {
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--purple-bright);
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+/* ── TOAST ───────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 950;
+  background: rgba(0,0,0,0.95);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 8px 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+  text-transform: uppercase;
+  box-shadow: 0 0 20px var(--amber-dim);
+}
+#toast.visible { opacity: 1; }
+
+/* ── INTRO OVERLAY ───────────────────────────────────────── */
+#intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0,0,0,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#intro-box {
+  border: 1px solid var(--amber);
+  background: rgba(0,0,0,0.98);
+  padding: 32px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 0 60px var(--amber-dim);
+  line-height: 1.7;
+}
+#intro-box p { margin-bottom: 10px; font-size: 11px; }
+
+/* ── LOADING DOTS ────────────────────────────────────────── */
+.loading-dots { color: var(--purple-bright); letter-spacing: 4px; font-size: 10px; }
+.loading-dots::after {
+  content: '...';
+  animation: loading-dots 1.2s steps(4, end) infinite;
+}
+@keyframes loading-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+
+/* ── UTILITÁRIOS ─────────────────────────────────────────── */
+.amber { color: var(--amber); }
+.dim   { color: var(--text-dim); }
+.hidden { display: none !important; }
+
+/* ── MAPLIBRE CUSTOMIZAÇÃO ───────────────────────────────── */
+.maplibregl-ctrl-attrib { background: rgba(0,0,0,0.8) !important; color: var(--text-dim) !important; font-family: var(--font-mono) !important; font-size: 8px !important; }
+.maplibregl-ctrl-attrib a { color: var(--amber-dim) !important; }
+.maplibregl-popup-content {
+  background: rgba(0,0,0,0.95) !important;
+  border: 1px solid var(--amber) !important;
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 20px var(--amber-dim) !important;
+  padding: 12px !important;
+}
+.maplibregl-popup-tip { display: none; }
+.maplibregl-popup-close-button { color: var(--amber) !important; font-size: 14px !important; }
+
+/* ── ANIMAÇÃO DE FLASH AO SINCRONIZAR ────────────────────── */
+@keyframes layer-flash {
+  0%, 100% { opacity: 1; }
+  25%  { opacity: 0.4; }
+  50%  { opacity: 1; }
+  75%  { opacity: 0.6; }
+}
+.layer-syncing { animation: layer-flash 0.8s ease; }
+
+/* ── LINHA DE IMPACTO SVG BRILHANTE ──────────────────────── */
+.impact-svg-line {
+  stroke: var(--purple-bright);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px var(--purple));
+  animation: line-pulse 2s ease infinite;
+}
+@keyframes line-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

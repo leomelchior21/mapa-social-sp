@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MAPA SOCIAL — SÃO PAULO // SISTEMA VIVO v1.0</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- MapLibre GL JS -->
+  <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.js"></script>
+
+  <!-- DuckDB-WASM -->
+  <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.1-dev106.0/dist/duckdb-browser-mvp.js"></script>
+</head>
+<body>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║  OVERLAY CRT — scanlines + distorção ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <canvas id="crt-overlay"></canvas>
+
+  <!-- ╔══════════════════════╗ -->
+  <!-- ║  HUD SUPERIOR        ║ -->
+  <!-- ╚══════════════════════╝ -->
+  <header id="hud-top">
+    <div id="hud-top-left">
+      <span class="rec-dot"></span>
+      <span id="rec-label">REC</span>
+      <span id="sys-clock">--:--:--</span>
+    </div>
+    <div id="hud-title">
+      <span class="dim">//</span> MAPA SOCIAL <span class="amber">SÃO PAULO</span> <span class="dim">// SOCIOAMBIENTAL URBANO</span>
+    </div>
+    <div id="hud-top-right">
+      <span id="last-update">ÚLTIMA ATUALIZAÇÃO: --</span>
+      <span id="sync-indicator" class="sync-idle">◉ IDLE</span>
+    </div>
+  </header>
+
+  <!-- ╔══════════════════════╗ -->
+  <!-- ║  PAINEL ESQUERDO     ║ -->
+  <!-- ╚══════════════════════╝ -->
+  <aside id="panel-left">
+    <div class="panel-header">▶ CAMADAS DE DADOS</div>
+
+    <div class="layer-group">
+      <label class="layer-toggle" data-layer="ar">
+        <span class="toggle-led" id="led-ar"></span>
+        <span class="toggle-icon">◈</span>
+        <span class="toggle-label">QUALIDADE DO AR</span>
+        <span class="toggle-source">CETESB</span>
+      </label>
+      <label class="layer-toggle" data-layer="focos">
+        <span class="toggle-led" id="led-focos"></span>
+        <span class="toggle-icon">◉</span>
+        <span class="toggle-label">FOCOS DE CALOR</span>
+        <span class="toggle-source">INPE</span>
+      </label>
+      <label class="layer-toggle" data-layer="saude">
+        <span class="toggle-led" id="led-saude"></span>
+        <span class="toggle-icon">◇</span>
+        <span class="toggle-label">EQUIPAMENTOS SAÚDE</span>
+        <span class="toggle-source">SMS-SP</span>
+      </label>
+    </div>
+
+    <div class="panel-header" style="margin-top:16px">▶ EFEITOS CRT</div>
+    <div class="slider-group">
+      <label>DISTORÇÃO</label>
+      <input type="range" id="slider-distortion" min="0" max="100" value="30" />
+      <span id="val-distortion">30</span>
+    </div>
+    <div class="slider-group">
+      <label>SCANLINES</label>
+      <input type="range" id="slider-scanlines" min="0" max="100" value="60" />
+      <span id="val-scanlines">60</span>
+    </div>
+
+    <div class="panel-header" style="margin-top:16px">▶ SINCRONIZAÇÃO</div>
+    <button id="btn-sync" class="btn-primary">⟳ SYNC NOW</button>
+    <button id="btn-demo" class="btn-secondary">▶ DEMO RASTRO</button>
+
+    <div id="data-stats" style="margin-top:16px">
+      <div class="stat-line"><span class="dim">AR:</span> <span id="stat-ar">-- registros</span></div>
+      <div class="stat-line"><span class="dim">FOCOS:</span> <span id="stat-focos">-- registros</span></div>
+      <div class="stat-line"><span class="dim">SAÚDE:</span> <span id="stat-saude">-- registros</span></div>
+    </div>
+  </aside>
+
+  <!-- ╔══════════════════════╗ -->
+  <!-- ║  MAPA PRINCIPAL      ║ -->
+  <!-- ╚══════════════════════╝ -->
+  <div id="map"></div>
+
+  <!-- ╔══════════════════════╗ -->
+  <!-- ║  PAINEL RASTRO       ║ -->
+  <!-- ╚══════════════════════╝ -->
+  <div id="panel-impact" class="panel-hidden">
+    <div class="panel-header">◈ RASTRO DO IMPACTO</div>
+    <div id="impact-origin"></div>
+    <div id="impact-emitter"></div>
+    <div id="impact-distance"></div>
+    <div id="impact-intensity"></div>
+    <div class="panel-header" style="margin-top:12px">▶ ANÁLISE CLAUDE</div>
+    <div id="impact-claude-loading" class="hidden">
+      <span class="loading-dots">PROCESSANDO</span>
+    </div>
+    <div id="impact-claude-text"></div>
+    <button id="btn-close-impact" class="btn-secondary" style="margin-top:12px">✕ FECHAR</button>
+  </div>
+
+  <!-- ╔══════════════════════╗ -->
+  <!-- ║  TOAST / NOTIFICAÇÃO ║ -->
+  <!-- ╚══════════════════════╝ -->
+  <div id="toast"></div>
+
+  <!-- ╔══════════════════════════════════════════╗ -->
+  <!-- ║  POPUP INSTRUÇÃO INICIAL                 ║ -->
+  <!-- ╚══════════════════════════════════════════╝ -->
+  <div id="intro-overlay">
+    <div id="intro-box">
+      <div class="panel-header">◉ SISTEMA VIVO — INICIALIZADO</div>
+      <p>Plataforma educacional de monitoramento socioambiental urbano de São Paulo.</p>
+      <p>Ative camadas no painel esquerdo. Clique em qualquer ponto crítico no mapa para acionar o <strong>Rastro do Impacto</strong>.</p>
+      <p class="dim">Dados: CETESB · INPE · SMS-SP · Hospedados em GitHub · Atualizados diariamente.</p>
+      <button id="btn-start" class="btn-primary" style="margin-top:16px;width:100%">▶ INICIAR SISTEMA</button>
+    </div>
+  </div>
+
+  <!-- Módulos ES6 -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
