@@ -3,8 +3,9 @@
  * Integra: simulação → motor visual → pulso de feedback → gráficos → impacto
  */
 
-import { tick, STATE, PREV_STATE, TICK_DIFF, iqaLabel, bandColor, balnColor, getAlerts, getLayerPoints, generateHistory } from './simulation.js';
+import { tick, STATE, PREV_STATE, TICK_DIFF, iqaLabel, bandColor, balnColor, getAlerts, generateHistory } from './simulation.js';
 import { initVisualEngine, renderLayer, removeLayer, updateLayerData, drawImpactLine, removeImpactLine, pulseMapZone, LAYER_COLORS } from './visualEngine.js';
+import { SAUDE_PONTOS, AR_PONTOS, RESIDUOS_PONTOS, TRAFEGO_CORREDORES, calcCongestionamento } from './geodata.js';
 import { askClaude } from './claude.js';
 
 const APP = {
@@ -308,7 +309,20 @@ function renderChart(layer) {
 }
 
 // ── Rastro do Impacto v2 ───────────────────────────────
-async function triggerImpact({ lat, lng, nome, layer }) {
+async function triggerImpact({ lat, lng, nome, layer, id }) {
+  // Detecta camada automaticamente pelo id se não fornecida
+  if (!layer && id) {
+    if (id.startsWith('sa')) layer = 'saude';
+    else if (id.startsWith('ar')) layer = 'ar';
+    else if (id.startsWith('ag')) layer = 'agua';
+    else if (id.startsWith('re')) layer = 'residuos';
+    else if (id.startsWith('tr')) layer = 'trafego';
+    else if (id.startsWith('en')) layer = 'energia';
+    else if (id.startsWith('so')) layer = 'solo';
+    else layer = 'saude';
+  }
+  if (!layer) layer = 'saude';
+  if (!nome)  nome  = id || 'Ponto analisado';
   document.getElementById('panel-impact').classList.remove('collapsed');
   document.getElementById('panel-charts').classList.add('collapsed');
   document.getElementById('btn-charts-toggle').classList.remove('active');
