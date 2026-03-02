@@ -1,134 +1,242 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MAPA SOCIAL — SÃO PAULO // SISTEMA VIVO v1.0</title>
-  <link rel="stylesheet" href="style.css" />
-
-  <!-- MapLibre GL JS -->
-  <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>URBAN LENS — São Paulo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet"/>
   <script src="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.js"></script>
-
-  <!-- DuckDB-WASM -->
-  <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.1-dev106.0/dist/duckdb-browser-mvp.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 
-  <!-- ╔══════════════════════════════════════╗ -->
-  <!-- ║  OVERLAY CRT — scanlines + distorção ║ -->
-  <!-- ╚══════════════════════════════════════╝ -->
-  <canvas id="crt-overlay"></canvas>
+  <!-- ═══ TOP BAR ═══ -->
+  <header id="topbar">
+    <div class="tb-left">
+      <div id="tb-logo">URBAN<span>LENS</span></div>
+      <div class="tb-sep"></div>
+      <div id="tb-location">◎ São Paulo, SP</div>
+      <div class="tb-sep"></div>
+      <div id="tb-time-block">
+        <span id="tb-date"></span>
+        <span id="tb-clock"></span>
+      </div>
+    </div>
 
-  <!-- ╔══════════════════════╗ -->
-  <!-- ║  HUD SUPERIOR        ║ -->
-  <!-- ╚══════════════════════╝ -->
-  <header id="hud-top">
-    <div id="hud-top-left">
-      <span class="rec-dot"></span>
-      <span id="rec-label">REC</span>
-      <span id="sys-clock">--:--:--</span>
+    <div class="tb-center">
+      <div id="alert-ticker">
+        <span class="ticker-label">● ALERTAS</span>
+        <div id="ticker-track"><div id="ticker-content"></div></div>
+      </div>
     </div>
-    <div id="hud-title">
-      <span class="dim">//</span> MAPA SOCIAL <span class="amber">SÃO PAULO</span> <span class="dim">// SOCIOAMBIENTAL URBANO</span>
-    </div>
-    <div id="hud-top-right">
-      <span id="last-update">ÚLTIMA ATUALIZAÇÃO: --</span>
-      <span id="sync-indicator" class="sync-idle">◉ IDLE</span>
+
+    <div class="tb-right">
+      <div class="tb-kpi" id="kpi-aqi">
+        <span class="kpi-l">IQA</span>
+        <span class="kpi-v" id="val-aqi">—</span>
+      </div>
+      <div class="tb-kpi" id="kpi-temp">
+        <span class="kpi-l">TEMP</span>
+        <span class="kpi-v" id="val-temp">—°C</span>
+      </div>
+      <div class="tb-kpi" id="kpi-chuva">
+        <span class="kpi-l">PRECIP</span>
+        <span class="kpi-v" id="val-chuva">— mm</span>
+      </div>
+      <button id="btn-charts-toggle" class="tb-btn" title="Painel de gráficos">▦ Gráficos</button>
     </div>
   </header>
 
-  <!-- ╔══════════════════════╗ -->
-  <!-- ║  PAINEL ESQUERDO     ║ -->
-  <!-- ╚══════════════════════╝ -->
+  <!-- ═══ LEFT PANEL ═══ -->
   <aside id="panel-left">
-    <div class="panel-header">▶ CAMADAS DE DADOS</div>
 
-    <div class="layer-group">
-      <label class="layer-toggle" data-layer="ar">
-        <span class="toggle-led" id="led-ar"></span>
-        <span class="toggle-icon">◈</span>
-        <span class="toggle-label">QUALIDADE DO AR</span>
-        <span class="toggle-source">CETESB</span>
-      </label>
-      <label class="layer-toggle" data-layer="focos">
-        <span class="toggle-led" id="led-focos"></span>
-        <span class="toggle-icon">◉</span>
-        <span class="toggle-label">FOCOS DE CALOR</span>
-        <span class="toggle-source">INPE</span>
-      </label>
-      <label class="layer-toggle" data-layer="saude">
-        <span class="toggle-led" id="led-saude"></span>
-        <span class="toggle-icon">◇</span>
-        <span class="toggle-label">EQUIPAMENTOS SAÚDE</span>
-        <span class="toggle-source">SMS-SP</span>
-      </label>
+    <div class="pl-title">Camadas Ativas</div>
+
+    <div class="layer-card" data-layer="ar" style="--c:#f97316">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(249,115,22,.15);color:#f97316">💨</div>
+        <div class="lc-meta">
+          <div class="lc-name">Atmosfera</div>
+          <div class="lc-src">INPE · CAMS · OpenAQ</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="ar"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">PM₂.₅</span><span class="lm-v" id="m-ar-pm25">—</span><span class="lm-u">µg/m³</span></div>
+        <div class="lm"><span class="lm-k">NO₂</span><span class="lm-v" id="m-ar-no2">—</span><span class="lm-u">µg/m³</span></div>
+        <div class="lm"><span class="lm-k">IQA</span><span class="lm-v" id="m-ar-iqa">—</span><span class="lm-u"></span></div>
+      </div>
     </div>
 
-    <div class="panel-header" style="margin-top:16px">▶ EFEITOS CRT</div>
-    <div class="slider-group">
-      <label>DISTORÇÃO</label>
-      <input type="range" id="slider-distortion" min="0" max="100" value="30" />
-      <span id="val-distortion">30</span>
-    </div>
-    <div class="slider-group">
-      <label>SCANLINES</label>
-      <input type="range" id="slider-scanlines" min="0" max="100" value="60" />
-      <span id="val-scanlines">60</span>
+    <div class="layer-card" data-layer="agua" style="--c:#0ea5e9">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(14,165,233,.15);color:#0ea5e9">💧</div>
+        <div class="lc-meta">
+          <div class="lc-name">Hidrosfera</div>
+          <div class="lc-src">SISAGUA · ANA</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="agua"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Turbidez</span><span class="lm-v" id="m-agua-turb">—</span><span class="lm-u">NTU</span></div>
+        <div class="lm"><span class="lm-k">pH</span><span class="lm-v" id="m-agua-ph">—</span><span class="lm-u"></span></div>
+        <div class="lm"><span class="lm-k">Balneab.</span><span class="lm-v" id="m-agua-baln">—</span><span class="lm-u"></span></div>
+      </div>
     </div>
 
-    <div class="panel-header" style="margin-top:16px">▶ SINCRONIZAÇÃO</div>
-    <button id="btn-sync" class="btn-primary">⟳ SYNC NOW</button>
-    <button id="btn-demo" class="btn-secondary">▶ DEMO RASTRO</button>
+    <div class="layer-card" data-layer="energia" style="--c:#a855f7">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(168,85,247,.15);color:#a855f7">⚡</div>
+        <div class="lc-meta">
+          <div class="lc-name">Matriz Elétrica</div>
+          <div class="lc-src">ONS · ANEEL</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="energia"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Hidro</span><span class="lm-v" id="m-en-hidro">—</span><span class="lm-u">%</span></div>
+        <div class="lm"><span class="lm-k">Térmica</span><span class="lm-v" id="m-en-term">—</span><span class="lm-u">%</span></div>
+        <div class="lm"><span class="lm-k">Bandeira</span><span class="lm-v" id="m-en-band">—</span><span class="lm-u"></span></div>
+      </div>
+    </div>
 
-    <div id="data-stats" style="margin-top:16px">
-      <div class="stat-line"><span class="dim">AR:</span> <span id="stat-ar">-- registros</span></div>
-      <div class="stat-line"><span class="dim">FOCOS:</span> <span id="stat-focos">-- registros</span></div>
-      <div class="stat-line"><span class="dim">SAÚDE:</span> <span id="stat-saude">-- registros</span></div>
+    <div class="layer-card" data-layer="residuos" style="--c:#22c55e">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(34,197,94,.15);color:#22c55e">♻</div>
+        <div class="lc-meta">
+          <div class="lc-name">Resíduos</div>
+          <div class="lc-src">SNIS · SINIR</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="residuos"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Desc. irreg.</span><span class="lm-v" id="m-res-pts">—</span><span class="lm-u">pts</span></div>
+        <div class="lm"><span class="lm-k">Cap. aterro</span><span class="lm-v" id="m-res-cap">—</span><span class="lm-u">%</span></div>
+      </div>
+    </div>
+
+    <div class="layer-card" data-layer="solo" style="--c:#84cc16">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(132,204,22,.15);color:#84cc16">🌱</div>
+        <div class="lc-meta">
+          <div class="lc-name">Solo / Biosfera</div>
+          <div class="lc-src">CAR · IBAMA · MapBiomas</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="solo"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Agrotóx.</span><span class="lm-v" id="m-solo-agro">—</span><span class="lm-u">kg/ha</span></div>
+        <div class="lm"><span class="lm-k">Desmat.</span><span class="lm-v" id="m-solo-desm">—</span><span class="lm-u">ha/mês</span></div>
+      </div>
+    </div>
+
+    <div class="layer-card" data-layer="trafego" style="--c:#f43f5e">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(244,63,94,.15);color:#f43f5e">🚦</div>
+        <div class="lc-meta">
+          <div class="lc-name">Tráfego &amp; Clima</div>
+          <div class="lc-src">Waze · Landsat 9</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="trafego"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Congestion.</span><span class="lm-v" id="m-tr-cong">—</span><span class="lm-u">%</span></div>
+        <div class="lm"><span class="lm-k">Ilha calor</span><span class="lm-v" id="m-tr-calor">—</span><span class="lm-u">°C Δ</span></div>
+        <div class="lm"><span class="lm-k">Ruído</span><span class="lm-v" id="m-tr-ruido">—</span><span class="lm-u">dB</span></div>
+      </div>
+    </div>
+
+    <div class="layer-card" data-layer="saude" style="--c:#ec4899">
+      <div class="lc-top">
+        <div class="lc-icon" style="background:rgba(236,72,153,.15);color:#ec4899">🏥</div>
+        <div class="lc-meta">
+          <div class="lc-name">Saúde Pública</div>
+          <div class="lc-src">DataSUS · Ministério Saúde</div>
+        </div>
+        <label class="lc-switch">
+          <input type="checkbox" class="layer-chk" data-layer="saude"/>
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="lc-metrics">
+        <div class="lm"><span class="lm-k">Respirat.</span><span class="lm-v" id="m-sau-resp">—</span><span class="lm-u">/100k</span></div>
+        <div class="lm"><span class="lm-k">Hídricas</span><span class="lm-v" id="m-sau-hidr">—</span><span class="lm-u">/100k</span></div>
+        <div class="lm"><span class="lm-k">Intox.</span><span class="lm-v" id="m-sau-intox">—</span><span class="lm-u">/100k</span></div>
+      </div>
+    </div>
+
+    <div class="pl-footer">
+      <div id="sim-badge"><span class="sim-pulse"></span> SIMULAÇÃO ATIVA</div>
+      <div id="next-tick-line">Próx. update: <span id="next-update">—</span></div>
+      <button id="btn-impact-demo" class="pl-btn">◈ Demo Rastro</button>
     </div>
   </aside>
 
-  <!-- ╔══════════════════════╗ -->
-  <!-- ║  MAPA PRINCIPAL      ║ -->
-  <!-- ╚══════════════════════╝ -->
+  <!-- ═══ MAP ═══ -->
   <div id="map"></div>
 
-  <!-- ╔══════════════════════╗ -->
-  <!-- ║  PAINEL RASTRO       ║ -->
-  <!-- ╚══════════════════════╝ -->
-  <div id="panel-impact" class="panel-hidden">
-    <div class="panel-header">◈ RASTRO DO IMPACTO</div>
-    <div id="impact-origin"></div>
-    <div id="impact-emitter"></div>
-    <div id="impact-distance"></div>
-    <div id="impact-intensity"></div>
-    <div class="panel-header" style="margin-top:12px">▶ ANÁLISE CLAUDE</div>
-    <div id="impact-claude-loading" class="hidden">
-      <span class="loading-dots">PROCESSANDO</span>
+  <!-- ═══ IMPACT SIDE PANEL ═══ -->
+  <div id="panel-impact" class="rpanel collapsed">
+    <div class="rp-bar" id="impact-bar">
+      <span class="rp-title">◈ Rastro do Impacto</span>
+      <button class="rp-close" id="impact-close">✕</button>
     </div>
-    <div id="impact-claude-text"></div>
-    <button id="btn-close-impact" class="btn-secondary" style="margin-top:12px">✕ FECHAR</button>
+    <div class="rp-body">
+      <div id="impact-origin-block"></div>
+      <div id="impact-chain"></div>
+      <div id="impact-analysis"></div>
+      <div class="rp-section">INTERPRETAÇÃO</div>
+      <div id="impact-loading" class="hidden">
+        <div class="ld-bar"><div class="ld-fill"></div></div>
+        <div class="ld-txt">Gerando análise...</div>
+      </div>
+      <div id="impact-claude-text"></div>
+    </div>
   </div>
 
-  <!-- ╔══════════════════════╗ -->
-  <!-- ║  TOAST / NOTIFICAÇÃO ║ -->
-  <!-- ╚══════════════════════╝ -->
+  <!-- ═══ CHARTS SIDE PANEL ═══ -->
+  <div id="panel-charts" class="rpanel collapsed">
+    <div class="rp-bar" id="charts-bar">
+      <span class="rp-title">▦ Histórico — 30 dias</span>
+      <button class="rp-close" id="charts-close">✕</button>
+    </div>
+    <div class="rp-body">
+      <div class="chart-tabs" id="chart-tabs">
+        <button class="ctab active" data-chart="ar">Ar</button>
+        <button class="ctab" data-chart="agua">Água</button>
+        <button class="ctab" data-chart="energia">Energia</button>
+        <button class="ctab" data-chart="saude">Saúde</button>
+        <button class="ctab" data-chart="trafego">Tráfego</button>
+      </div>
+      <div id="chart-wrap"><canvas id="main-chart"></canvas></div>
+      <div id="chart-insight"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
   <div id="toast"></div>
 
-  <!-- ╔══════════════════════════════════════════╗ -->
-  <!-- ║  POPUP INSTRUÇÃO INICIAL                 ║ -->
-  <!-- ╚══════════════════════════════════════════╝ -->
-  <div id="intro-overlay">
-    <div id="intro-box">
-      <div class="panel-header">◉ SISTEMA VIVO — INICIALIZADO</div>
-      <p>Plataforma educacional de monitoramento socioambiental urbano de São Paulo.</p>
-      <p>Ative camadas no painel esquerdo. Clique em qualquer ponto crítico no mapa para acionar o <strong>Rastro do Impacto</strong>.</p>
-      <p class="dim">Dados: CETESB · INPE · SMS-SP · Hospedados em GitHub · Atualizados diariamente.</p>
-      <button id="btn-start" class="btn-primary" style="margin-top:16px;width:100%">▶ INICIAR SISTEMA</button>
-    </div>
-  </div>
-
-  <!-- Módulos ES6 -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app2.js"></script>
 </body>
 </html>
