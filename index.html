@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>-X SOCIAL — Simulação Urbana SP</title>
+<title>Urban Lens — Simulação Urbana SP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet"/>
 <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet"/>
@@ -13,97 +13,105 @@
 </head>
 <body>
 
-<!-- BANNER DE EMERGÊNCIA -->
+<!-- ── LIVE NEWS BANNER ── -->
 <div id="banner">
-  <div id="bn-inner">
-    <div id="bn-pulse"></div>
-    <span id="bn-tag">EMERGÊNCIA ATIVA</span>
-    <span id="bn-text">Inicializando simulação...</span>
+  <div id="bn-wrap">
+    <div id="bn-live">
+      <div id="live-dot"></div>
+      AO VIVO
+    </div>
+    <div id="bn-breaking">EMERGÊNCIA</div>
+    <div id="bn-ticker">
+      <div id="bn-text">Inicializando simulação...</div>
+    </div>
     <div id="bn-right">
-      <div id="timer-track"><div id="timer-fill"></div></div>
-      <span id="timer-clock">10:00</span>
-      <span id="crisis-num">01/10</span>
+      <div id="bn-timer">
+        <div id="timer-track"><div id="timer-fill"></div></div>
+        <div id="timer-clock">10:00</div>
+      </div>
+      <div id="bn-crisis">
+        <div id="crisis-n">01</div>
+        <div id="crisis-of">DE 10 CRISES</div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- APP -->
+<!-- ── APP ── -->
 <div id="app">
 
   <!-- PAINEL ESQUERDO -->
   <aside id="panel-l">
-    <div id="logo-block">
-      <img src="data:image/png;base64,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" id="logo-main" alt="-X SOCIAL"/>
-      <div id="logo-sub">SIMULAÇÃO URBANA · SÃO PAULO</div>
+    <!-- Wordmark -->
+    <div id="wordmark">
+      <div id="wm-title">URBAN LENS</div>
+      <div id="wm-sub">SIMULAÇÃO URBANA · SÃO PAULO</div>
     </div>
 
-    <div id="crisis-block">
-      <div class="sec-label">INVESTIGAR</div>
-      <div id="cb-title">Carregando...</div>
-      <div id="cb-desc"></div>
-      <div id="cb-pista-wrap">
-        <div class="sec-label" style="margin-top:10px">PISTA</div>
-        <div id="cb-pista"></div>
-      </div>
+    <!-- Brief da crise -->
+    <div id="crisis-brief">
+      <span class="lbl">SITUAÇÃO ATIVA</span>
+      <div id="cb-titulo">—</div>
+      <div id="cb-fase">—</div>
     </div>
 
-    <div class="sec-label" style="padding:10px 14px 4px">CAMADAS DE DADOS</div>
+    <!-- Toggle de Camadas -->
+    <div id="layers-title">
+      <span class="lbl">CAMADAS DE DADOS</span>
+    </div>
     <div id="layers"></div>
 
-    <div id="phase-block">
-      <div class="sec-label">DEGRADAÇÃO DA CRISE</div>
-      <div id="phase-bar-wrap"><div id="phase-bar"></div></div>
-      <div id="phase-steps">
-        <div class="ph-step" data-p="0"><span class="ph-dot"></span><span>Início</span></div>
-        <div class="ph-step" data-p="1"><span class="ph-dot"></span><span>Agravamento</span></div>
-        <div class="ph-step" data-p="2"><span class="ph-dot"></span><span>Crítico</span></div>
-        <div class="ph-step" data-p="3"><span class="ph-dot"></span><span>Colapso</span></div>
-        <div class="ph-step" data-p="4"><span class="ph-dot"></span><span>Ponto Crítico</span></div>
+    <!-- Degradação -->
+    <div id="phase-wrap">
+      <span class="lbl">DEGRADAÇÃO DA CRISE</span>
+      <div id="phase-bar-bg"><div id="phase-bar"></div></div>
+      <div id="phase-list">
+        <!-- preenchido por JS -->
       </div>
     </div>
 
+    <!-- Botões -->
     <div id="left-btns">
       <button id="btn-next">PRÓXIMA CRISE →</button>
       <button id="btn-restart">↺ Reiniciar esta crise</button>
     </div>
   </aside>
 
-  <!-- MAPA -->
+  <!-- MAPA CENTRAL -->
   <main id="map-wrap">
     <div id="map"></div>
     <div id="map-loader">
       <div class="spin"></div>
-      <span>CARREGANDO MAPA</span>
+      <span>CARREGANDO MAPA DE SÃO PAULO</span>
     </div>
-    <div id="map-crisis-badge" class="hidden"></div>
-    <div id="legend"></div>
+    <div id="map-legend"></div>
   </main>
 
   <!-- PAINEL DIREITO -->
   <aside id="panel-r">
-    <div id="pr-head">
-      <img src="data:image/png;base64,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" id="pr-icon" alt="icon"/>
-      <div>
-        <div id="pr-title">PAINEL DE DADOS</div>
-        <div id="pr-active-layer">Selecione uma camada</div>
+    <div id="pr-header">
+      <div id="pr-hl">CAMADA ATIVA</div>
+      <div id="pr-layer">—</div>
+    </div>
+
+    <!-- KPIs -->
+    <div id="kpis-section">
+      <span class="lbl">INDICADORES EM TEMPO REAL</span>
+      <div id="kpis-grid"></div>
+    </div>
+
+    <!-- Gráfico -->
+    <div id="chart-section">
+      <div class="section-title">CURVA DE DEGRADAÇÃO — 10 MIN</div>
+      <div id="chart-canvas-wrap">
+        <canvas id="chart"></canvas>
       </div>
     </div>
 
-    <div id="kpis"></div>
-
-    <div id="chart-block">
-      <div class="sec-label" style="padding:14px 14px 0">CURVA DE DEGRADAÇÃO — 10 MIN</div>
-      <div id="chart-area"><canvas id="chart"></canvas></div>
-    </div>
-
-    <div id="cause-block">
-      <div class="sec-label">CAUSA IDENTIFICADA</div>
-      <div id="cause-text">Selecione uma camada para ver a análise.</div>
-    </div>
-
-    <div id="invest-block">
-      <div class="sec-label">QUESTÃO DE INVESTIGAÇÃO</div>
-      <div id="invest-text">Como esta crise poderia ter sido evitada?</div>
+    <!-- Chat de Investigação -->
+    <div id="chat-section">
+      <div class="section-title">GRUPO DE INVESTIGAÇÃO</div>
+      <div id="chat-messages"></div>
     </div>
   </aside>
 
