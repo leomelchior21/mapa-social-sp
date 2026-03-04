@@ -1,150 +1,330 @@
 /**
- * map.js — Inicialização do MapLibre GL JS
- * - Mapa base dark com estilo Protomaps (gratuito, sem chave)
- * - Extrusão de prédios 3D no zoom > 14
- * - Configurações de câmera táticas
+ * map.js — Motor GIS (MapLibre GL)
+ * 
+ * Responsabilidade única: renderizar âncoras como blobs amorfos pulsantes.
+ * Sem dependência de chart.js ou UI DOM externa.
+ * 
+ * API:
+ *   initMap(container) → Promise
+ *   renderLayer(layerId, anchors, state, layerCfg)
+ *   clearLayer(layerId)
+ *   clearAll()
  */
 
-// Estilo alternativo: Stadia Alidade Dark (sem chave necessária para uso educacional)
-// Fallback: vector tiles da OpenMapTiles via demotiles.org
+import { ANCHOR_MAP } from './anchors.js';
 
-const MAP_STYLE_URL =
-  'https://tiles.openfreemap.org/styles/dark';
+let _map = null;
+let _activeSources = new Set(); // source ids atualmente no mapa
+let _activeLayers  = new Set(); // layer ids atualmente no mapa
+let _popups        = new Map(); // anchorId → maplibregl.Popup
 
-// Coordenadas centrais de São Paulo
-const SP_CENTER = [-46.6333, -23.5505];
-const SP_ZOOM   = 11;
-const SP_PITCH  = 45;
-const SP_BEARING = -15;
+// Estilos de mapa (fallback chain)
+const STYLES = [
+  'https://tiles.openfreemap.org/styles/dark',
+  'https://tiles.openfreemap.org/styles/positron',
+  'https://demotiles.maplibre.org/style.json',
+];
 
-/**
- * Inicializa o mapa MapLibre em modo 3D tático.
- * @param {string} containerId - ID do elemento DOM
- * @returns {maplibregl.Map}
- */
-export async function initMap(containerId) {
-  const map = new maplibregl.Map({
-    container: containerId,
-    style: MAP_STYLE_URL,
-    center: SP_CENTER,
-    zoom: SP_ZOOM,
-    pitch: SP_PITCH,
-    bearing: SP_BEARING,
-    antialias: true,
-    // Reduz consumo de memória em dispositivos fracos
-    maxParallelImageRequests: 4,
-    preserveDrawingBuffer: false,
-  });
+export function getMap() { return _map; }
 
-  return new Promise((resolve) => {
-    map.on('load', () => {
-      setupBuildings(map);
-      setupFog(map);
-      setupZoomBehavior(map);
-      console.log('[MAP] MapLibre carregado — São Paulo centrado');
-      resolve(map);
-    });
+// ── Inicializa ────────────────────────────────────────────
+export function initMap(container) {
+  return new Promise((resolve, reject) => {
+    let styleIdx = 0;
 
-    map.on('error', (e) => {
-      // Fallback para estilo simples se o dark não carregar
-      console.warn('[MAP] Erro no estilo, tentando fallback:', e);
-    });
-  });
-}
+    function tryStyle() {
+      if (styleIdx >= STYLES.length) { reject(new Error('All map styles failed')); return; }
 
-/**
- * Extrusão 3D de prédios — ativa apenas em zoom > 14 por performance.
- * Os prédios são renderizados com cor âmbar escura para manter estética.
- */
-function setupBuildings(map) {
-  // Aguarda layers do mapa carregarem
-  const layers = map.getStyle().layers;
+      if (_map) { try { _map.remove(); } catch(e) {} }
 
-  // Procura camada de prédios no estilo
-  const buildingLayer = layers?.find(
-    l => l.id === 'building' || l.id === 'buildings' || l['source-layer'] === 'building'
-  );
-
-  if (buildingLayer) {
-    // Modifica cor para estética CRT
-    map.setPaintProperty(buildingLayer.id, 'fill-color', '#1a1208');
-    map.setPaintProperty(buildingLayer.id, 'fill-outline-color', '#3d2d00');
-  }
-
-  // Adiciona layer de extrusão 3D se disponível
-  if (!map.getLayer('3d-buildings')) {
-    try {
-      map.addLayer({
-        id: '3d-buildings',
-        source: buildingLayer?.source || 'openmaptiles',
-        'source-layer': 'building',
-        type: 'fill-extrusion',
-        minzoom: 14,  // Performance: apenas em zoom > 14
-        paint: {
-          'fill-extrusion-color': [
-            'interpolate', ['linear'], ['get', 'render_height'],
-            0,   '#0a0800',
-            50,  '#1a1208',
-            100, '#2a1e0a',
-            200, '#3d2d00',
-          ],
-          'fill-extrusion-height': ['get', 'render_height'],
-          'fill-extrusion-base':   ['get', 'render_min_height'],
-          'fill-extrusion-opacity': 0.85,
-        },
+      _map = new maplibregl.Map({
+        container,
+        style: STYLES[styleIdx],
+        center: [-46.636, -23.548],
+        zoom: 10.5,
+        minZoom: 9,
+        maxZoom: 16,
+        attributionControl: false,
+        pitchWithRotate: false,
       });
-    } catch (e) {
-      console.warn('[MAP] Extrusão 3D não disponível neste estilo');
+
+      _map.addControl(
+        new maplibregl.AttributionControl({ compact: true }),
+        'bottom-right'
+      );
+      _map.addControl(
+        new maplibregl.NavigationControl({ showCompass: false }),
+        'bottom-left'
+      );
+
+      _map.on('error', () => { styleIdx++; tryStyle(); });
+      _map.on('load',  () => resolve(_map));
     }
-  }
+
+    tryStyle();
+  });
 }
 
+// ── Renderiza uma camada de âncoras ───────────────────────
 /**
- * Névoa atmosférica — efeito de profundidade tático.
+ * @param {string} layerId - id da camada (ex: 'ar')
+ * @param {Array} anchors  - âncoras filtradas para essa camada
+ * @param {Object} state   - STATE da simulação
+ * @param {Object} layerCfg - config da camada (cor, nome, etc.)
  */
-function setupFog(map) {
-  try {
-    map.setFog({
-      color: 'rgba(0, 0, 0, 0.8)',
-      'high-color': 'rgba(10, 8, 0, 0.5)',
-      'horizon-blend': 0.02,
-      'space-color': '#000000',
-      'star-intensity': 0,
+export function renderLayer(layerId, anchors, state, layerCfg) {
+  if (!_map) return;
+
+  clearLayer(layerId);
+
+  anchors.forEach(anchor => {
+    const val      = anchor.value(state);
+    const sev      = anchor.severity(state);
+    const color    = sevColor(sev, layerCfg.color);
+    const srcId    = `src-${anchor.id}`;
+    const blobId   = `blob-${anchor.id}`;
+    const haloId   = `halo-${anchor.id}`;
+    const dotId    = `dot-${anchor.id}`;
+    const labelId  = `lbl-${anchor.id}`;
+
+    // Raio do blob proporcional ao valor (normalizado)
+    const baseRadius = normalizeRadius(val, layerId);
+
+    // ── GeoJSON ponto ──────────────────────────────────
+    safeAddSource(srcId, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [anchor.lng, anchor.lat] },
+        properties: {
+          val, sev, color,
+          label: anchor.label(state),
+          nome:  anchor.nome,
+          bairro:anchor.bairro,
+          layerId,
+        },
+      },
     });
-  } catch (e) {
-    // Fog não disponível em todos os estilos
-  }
-}
 
-/**
- * Comportamento adaptativo por zoom.
- * - Zoom > 14: extrude prédios
- * - Zoom < 12: reduz pitch para visão mais ampla
- */
-function setupZoomBehavior(map) {
-  map.on('zoom', () => {
-    const z = map.getZoom();
+    // ── Halo externo (anel difuso) ─────────────────────
+    safeAddLayer({
+      id: haloId, type: 'circle', source: srcId,
+      paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 9, baseRadius*2.5, 14, baseRadius*5],
+        'circle-color':  color,
+        'circle-opacity': sev === 'crit' ? 0.12 : 0.07,
+        'circle-blur':    1.2,
+        'circle-pitch-alignment': 'map',
+      },
+    });
 
-    // Controla visibilidade da extrusão 3D (já gerenciado pelo minzoom)
-    // Aqui podemos adicionar lógica adicional se necessário
+    // ── Blob central (forma amorfa via blur) ──────────
+    safeAddLayer({
+      id: blobId, type: 'circle', source: srcId,
+      paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 9, baseRadius*1.3, 14, baseRadius*3],
+        'circle-color':  color,
+        'circle-opacity': sev === 'crit' ? 0.55 : sev === 'warn' ? 0.42 : 0.28,
+        'circle-blur':    0.65,
+        'circle-pitch-alignment': 'map',
+      },
+    });
 
-    if (z < 10 && map.getPitch() > 30) {
-      map.easeTo({ pitch: 0, duration: 600 });
-    }
+    // ── Ponto central sólido ──────────────────────────
+    safeAddLayer({
+      id: dotId, type: 'circle', source: srcId,
+      paint: {
+        'circle-radius': ['interpolate',['linear'],['zoom'], 9, 3.5, 14, 8],
+        'circle-color':  color,
+        'circle-opacity': 1,
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': sev === 'ok' ? 'rgba(0,0,0,0.6)' : '#fff',
+        'circle-stroke-opacity': 0.8,
+        'circle-pitch-alignment': 'map',
+      },
+    });
+
+    // ── Label flutuante ──────────────────────────────
+    safeAddLayer({
+      id: labelId, type: 'symbol', source: srcId,
+      layout: {
+        'text-field': anchor.nome,
+        'text-font': ['Noto Sans Regular', 'Open Sans Regular'],
+        'text-size': ['interpolate',['linear'],['zoom'], 10,0, 11,10, 14,12],
+        'text-offset': [0, -1.8],
+        'text-anchor': 'bottom',
+        'text-max-width': 12,
+      },
+      paint: {
+        'text-color': '#e2e8f0',
+        'text-halo-color': 'rgba(0,0,0,0.85)',
+        'text-halo-width': 1.5,
+        'text-opacity': ['interpolate',['linear'],['zoom'], 10,0, 11,0.7, 14,1],
+      },
+    });
+
+    // ── Click → popup ─────────────────────────────────
+    _map.on('click', dotId, e => {
+      const p = e.features[0].properties;
+      closeAllPopups();
+      const pop = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: false,
+        offset: 14,
+        className: 'hud-popup',
+      })
+        .setLngLat([anchor.lng, anchor.lat])
+        .setHTML(buildPopupHTML(anchor, state, layerCfg))
+        .addTo(_map);
+      _popups.set(anchor.id, pop);
+      pop.on('close', () => _popups.delete(anchor.id));
+    });
+
+    _map.on('mouseenter', dotId, () => { _map.getCanvas().style.cursor = 'crosshair'; });
+    _map.on('mouseleave', dotId, () => { _map.getCanvas().style.cursor = ''; });
+
+    // Registra para cleanup
+    _activeSources.add(srcId);
+    _activeLayers.add(haloId);
+    _activeLayers.add(blobId);
+    _activeLayers.add(dotId);
+    _activeLayers.add(labelId);
   });
 }
 
-/**
- * Retorna o mapa para a posição inicial de São Paulo.
- * @param {maplibregl.Map} map
- */
-export function resetCamera(map) {
-  map.flyTo({
-    center: SP_CENTER,
-    zoom: SP_ZOOM,
-    pitch: SP_PITCH,
-    bearing: SP_BEARING,
-    duration: 1500,
-    easing: t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+// ── Animação de pulso (intervalo externo) ─────────────────
+// Não usamos CSS animation no GL — alternamos opacidade via setPaintProperty
+let _pulseTimer   = null;
+let _pulseState   = 0;
+const PULSE_MS    = 1200;
+
+export function startPulse() {
+  if (_pulseTimer) return;
+  _pulseTimer = setInterval(() => {
+    if (!_map) return;
+    _pulseState = (_pulseState + 1) % 4;
+    const t  = _pulseState / 3;                         // 0→1
+    const op = 0.42 + 0.25 * Math.sin(t * Math.PI);    // 0.42…0.67
+
+    _activeLayers.forEach(id => {
+      if (!id.startsWith('blob-') && !id.startsWith('halo-')) return;
+      try {
+        const isCrit = id.startsWith('blob-')
+          ? _map.getPaintProperty(id, 'circle-opacity') > 0.45
+          : false;
+        const base = id.startsWith('halo-') ? 0.06 : isCrit ? 0.45 : 0.30;
+        _map.setPaintProperty(id, 'circle-opacity', base + 0.18 * Math.sin(t * Math.PI));
+      } catch(e) {}
+    });
+  }, PULSE_MS);
+}
+
+export function stopPulse() {
+  clearInterval(_pulseTimer);
+  _pulseTimer = null;
+}
+
+// ── Limpa camada específica ───────────────────────────────
+export function clearLayer(layerId) {
+  closeAllPopups();
+
+  const toRemove = [];
+  _activeLayers.forEach(id => {
+    const anchorId = id.replace(/^(blob|halo|dot|lbl)-/, '');
+    const anchor   = ANCHOR_MAP[anchorId];
+    if (anchor && anchor.layer === layerId) toRemove.push(id);
   });
+
+  toRemove.forEach(id => {
+    try { if (_map.getLayer(id)) _map.removeLayer(id); } catch(e) {}
+    _activeLayers.delete(id);
+  });
+
+  const srcToRemove = [];
+  _activeSources.forEach(id => {
+    const anchorId = id.replace('src-', '');
+    const anchor   = ANCHOR_MAP[anchorId];
+    if (anchor && anchor.layer === layerId) srcToRemove.push(id);
+  });
+
+  srcToRemove.forEach(id => {
+    try { if (_map.getSource(id)) _map.removeSource(id); } catch(e) {}
+    _activeSources.delete(id);
+  });
+}
+
+// ── Limpa tudo ────────────────────────────────────────────
+export function clearAll() {
+  closeAllPopups();
+  _activeLayers.forEach(id => { try { if(_map?.getLayer(id)) _map.removeLayer(id); } catch(e){} });
+  _activeSources.forEach(id => { try { if(_map?.getSource(id)) _map.removeSource(id); } catch(e){} });
+  _activeLayers.clear();
+  _activeSources.clear();
+}
+
+// ── Helpers internos ─────────────────────────────────────
+function safeAddSource(id, spec) {
+  try { if (!_map.getSource(id)) _map.addSource(id, spec); } catch(e) {}
+}
+function safeAddLayer(spec) {
+  try { if (!_map.getLayer(spec.id)) _map.addLayer(spec); } catch(e) {}
+}
+function closeAllPopups() {
+  _popups.forEach(p => { try { p.remove(); } catch(e) {} });
+  _popups.clear();
+}
+
+function sevColor(sev, defaultColor) {
+  if (sev === 'crit') return '#ef4444';
+  if (sev === 'warn') return '#f59e0b';
+  return defaultColor;
+}
+
+/** Normaliza valor para raio de blob (9–22px em zoom 10) */
+function normalizeRadius(val, layerId) {
+  const ranges = {
+    ar:       [4, 45],
+    agua:     [0, 20],
+    trafego:  [5, 99],
+    energia:  [5, 45],
+    residuos: [40, 2200],
+    solo:     [0, 50],
+    saude:    [80, 400],
+  };
+  const [lo, hi] = ranges[layerId] || [0, 100];
+  const t = Math.min(1, Math.max(0, (val - lo) / (hi - lo)));
+  return 9 + t * 22; // 9…31 px base
+}
+
+/** HTML do popup HUD */
+function buildPopupHTML(anchor, state, layerCfg) {
+  const sev   = anchor.severity(state);
+  const val   = anchor.value(state);
+  const sevClass = sev === 'crit' ? 'sev-crit' : sev === 'warn' ? 'sev-warn' : 'sev-ok';
+  const sevLabel = sev === 'crit' ? 'CRÍTICO' : sev === 'warn' ? 'ATENÇÃO' : 'NORMAL';
+
+  // Âncoras influenciadas
+  const affecting = (anchor.affects || [])
+    .map(id => ANCHOR_MAP[id])
+    .filter(Boolean)
+    .map(a => `<span class="pop-affect-tag">${a.nome}</span>`)
+    .join('');
+
+  return `
+    <div class="hud-pop-inner">
+      <div class="hud-pop-header">
+        <span class="hud-pop-icon">${layerCfg.icon}</span>
+        <div>
+          <div class="hud-pop-name">${anchor.nome}</div>
+          <div class="hud-pop-bairro">${anchor.bairro}</div>
+        </div>
+        <span class="hud-pop-sev ${sevClass}">${sevLabel}</span>
+      </div>
+      <div class="hud-pop-label">${anchor.label(state)}</div>
+      ${affecting ? `<div class="hud-pop-affects">
+        <span class="hud-pop-affects-lbl">Afeta:</span>
+        ${affecting}
+      </div>` : ''}
+      <div class="hud-pop-footer">${layerCfg.nome}</div>
+    </div>`;
 }
